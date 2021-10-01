@@ -912,7 +912,22 @@ void codal::idle_task()
 {
     while(1)
     {
-        idle();
+        uint32_t* ptr = (uint32_t*)0x20000194;
+		
+		if (*ptr == 0xAB12CD34) {
+			typedef void (*JUMPF)(void);
+						
+			target_disable_irq();
+			JUMPF FirmwareEntry;
+			
+			uint32_t* P32= (uint32_t*)0x08006404;
+			
+			FirmwareEntry=(JUMPF)(*P32);
+			
+			FirmwareEntry();
+			
+		}
+		idle();
         schedule();
     }
 }
