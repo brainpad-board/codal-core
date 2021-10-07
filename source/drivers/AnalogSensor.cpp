@@ -82,7 +82,11 @@ int AnalogSensor::getValue()
  */
 void AnalogSensor::updateSample()
 {
-    uint32_t value = _pin.getAnalogValue();
+    if (_pin.name == 0x20) // this ic PC_0 Brainpad mapped to Channel 17 temp sensor
+      _pin.name = 0xF1; // ADC_TEMP is 0xF1
+
+	
+   volatile int value = _pin.getAnalogValue();
 
     // If this is the first reading performed, take it a a baseline. Otherwise, perform a decay average to smooth out the data.
     if (!(status & ANALOG_SENSOR_INITIALISED))
@@ -92,7 +96,11 @@ void AnalogSensor::updateSample()
     }
     else
     {
+        if (_pin.name != 0xF1)
         sensorValue = ((sensorValue * (1023 - sensitivity)) + (value * sensitivity)) >> 10;
+        else 
+        sensorValue = value;
+        
     }
 
     checkThresholding();
