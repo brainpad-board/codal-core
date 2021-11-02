@@ -101,7 +101,9 @@ namespace codal
           */
         virtual uint64_t getSerialNumber()
         {
-            return target_get_serial();
+            //return target_get_serial(); 
+            //TQD_TODO
+			return 0;
         }
 
         /**
