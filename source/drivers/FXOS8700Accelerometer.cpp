@@ -1,3 +1,4 @@
+#if 0
 /*
 The MIT License (MIT)
 
@@ -134,3 +135,4 @@ FXOS8700Accelerometer::~FXOS8700Accelerometer()
 {
 }
 
+#endif

@@ -1,3 +1,4 @@
+#if 0
 /*
 The MIT License (MIT)
 
@@ -281,3 +282,4 @@ FXOS8700::~FXOS8700()
 {
 }
 
+#endif

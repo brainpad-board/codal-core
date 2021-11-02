@@ -1,3 +1,4 @@
+#if 0
 /*
 The MIT License (MIT)
 
@@ -116,3 +117,4 @@ FXOS8700Magnetometer::~FXOS8700Magnetometer()
 {
 }
 
+#endif
