@@ -69,6 +69,9 @@ enum ErrorCode{
 
     // SPI Communication error occured
     DEVICE_SPI_ERROR = -1014,
+
+    // An invalid state was detected (i.e. not initialised)
+    DEVICE_INVALID_STATE = -1015,
 };
 
 /**
@@ -90,5 +93,14 @@ enum PanicCode{
 
     // Non-recoverable error in USB driver
     DEVICE_USB_ERROR = 50,
+
+    // Non-recoverable error in the JACDAC stack
+    DEVICE_JACDAC_ERROR = 60,
+
+    // CPU SDK faults
+    DEVICE_CPU_SDK = 70,
+
+    // hardware incorrect configuration
+    DEVICE_HARDWARE_CONFIGURATION_ERROR = 90,
 };
 #endif

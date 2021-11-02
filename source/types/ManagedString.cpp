@@ -31,7 +31,7 @@ DEALINGS IN THE SOFTWARE.
   * such as Touch Develop.
   *
   * Written from first principles here, for several reasons:
-  * 1) std::shared_ptr is not yet availiable on the ARMCC compiler
+  * 1) std::shared_ptr is not yet available on the ARMCC compiler
   *
   * 2) to reduce memory footprint - we don't need many of the other features in the std library
   *
@@ -351,6 +351,31 @@ ManagedString& ManagedString::operator = (const ManagedString& s)
 bool ManagedString::operator== (const ManagedString& s)
 {
     return ((length() == s.length()) && (strcmp(toCharArray(),s.toCharArray())==0));
+}
+
+/**
+  * Inequality operation.
+  *
+  * Called when one ManagedString is tested to be not equal using the '!=' operator.
+  *
+  * @param s The ManagedString to test ourselves against.
+  *
+  * @return true if this ManagedString is identical to the one supplied, false otherwise.
+  *
+  * @code
+  * DeviceDisplay display;
+  * ManagedString s("abcd");
+  * ManagedString p("efgh");
+  *
+  * if(p != s)
+  *     display.scroll("We are different!");
+  * else
+  *     display.scroll("We are the same!");
+  * @endcode
+  */
+bool ManagedString::operator!= (const ManagedString& s)
+{
+    return !(*this == s);
 }
 
 /**

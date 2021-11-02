@@ -69,7 +69,7 @@ protected:
       * @param data The byte to write.
       * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
       */
-    virtual int write(uint16_t data);
+    virtual int write(uint8_t data);
 
     /**
     * Reads a single byte from the I2C bus.
@@ -95,7 +95,7 @@ public:
       *
       * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
       */
-    int write(uint16_t address, uint8_t data);
+    virtual int write(uint16_t address, uint8_t data);
 
     /**
     * Issues a standard, I2C command write to the I2C bus.
@@ -115,6 +115,7 @@ public:
     * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
     */
     virtual int write(uint16_t address, uint8_t *data, int len, bool repeated = false);
+    int write(int address, char *data, int len, bool repeated = false);
 
     /**
       * Performs a typical register write operation to the I2C slave device provided.
@@ -133,7 +134,7 @@ public:
       *
       * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
       */
-    int writeRegister(uint16_t address, uint8_t reg, uint8_t value);
+    virtual int writeRegister(uint16_t address, uint8_t reg, uint8_t value);
 
     /**
       * Issues a standard, 2 byte I2C command read to the I2C bus.
@@ -153,6 +154,7 @@ public:
       * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the read request failed.
       */
     virtual int read(uint16_t address, uint8_t *data, int len, bool repeated = false);
+    int read(int address, char *data, int len, bool repeated = false);
 
     /**
       * Performs a typical register read operation to the I2C slave device provided.
@@ -177,6 +179,18 @@ public:
       * @return DEVICE_OK or DEVICE_I2C_ERROR if the the read request failed.
       */
     virtual int readRegister(uint16_t address, uint8_t reg, uint8_t *data, int length, bool repeated = true);
+
+    /**
+     * Issues a single byte read command, and returns the value read, or an error.
+     *
+     * Blocks the calling thread until complete.
+     *
+     * @param address The address of the I2C device to write to.
+     * @param reg The address of the register to access.
+     *
+     * @return the byte read on success, DEVICE_INVALID_PARAMETER or DEVICE_I2C_ERROR if the the read request failed.
+     */
+    virtual int readRegister(uint8_t address, uint8_t reg);
 };
 }
 

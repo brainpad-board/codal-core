@@ -41,6 +41,13 @@ DEALINGS IN THE SOFTWARE.
 #define CODAL_DEBUG_HEAP                      2
 #endif
 
+
+#define CODAL_ASSERT(cond, panic_num) {\
+  if (!(cond)) \
+      target_panic(panic_num);\
+}
+
+
 #include "platform_includes.h"
 
 // Enables or disables the DeviceHeapllocator. Note that if disabled, no reuse of the SRAM normally
@@ -52,7 +59,7 @@ DEALINGS IN THE SOFTWARE.
 
 //
 // The CODAL heap allocator supports the use of multiple, independent heap regions if needed.
-// This defines the maximum number of heap regions permitted. 
+// This defines the maximum number of heap regions permitted.
 // n.b. Setting this option to '1' will also optimise the heap allocator for code space.
 //
 #ifndef DEVICE_MAXIMUM_HEAPS
@@ -70,6 +77,15 @@ DEALINGS IN THE SOFTWARE.
 #endif
 
 //
+// Defines the default minimum period (in uS) a hardware timer can measure without
+// risk of a race condition. Can be overridden in a target config.json.
+//
+#ifndef CODAL_TIMER_MINIMUM_PERIOD
+#define CODAL_TIMER_MINIMUM_PERIOD            10
+#endif
+
+
+//
 // Fiber scheduler configuration
 //
 
@@ -77,6 +93,10 @@ DEALINGS IN THE SOFTWARE.
 // Also used to drive the codal device runtime system ticker.
 #ifndef SCHEDULER_TICK_PERIOD_US
 #define SCHEDULER_TICK_PERIOD_US                   6000
+#endif
+
+#ifndef DEVICE_FIBER_USER_DATA
+#define DEVICE_FIBER_USER_DATA                     1
 #endif
 
 //
@@ -110,7 +130,7 @@ DEALINGS IN THE SOFTWARE.
 // I/O Options
 //
 #ifndef DEVICE_COMPONENT_COUNT
-#define DEVICE_COMPONENT_COUNT               30
+#define DEVICE_COMPONENT_COUNT               100
 #endif
 //
 // Define the default mode in which the digital input pins are configured.
@@ -149,7 +169,7 @@ DEALINGS IN THE SOFTWARE.
 #endif
 
 // When set to '1', this option enables parameter validation checking into low level system modules
-// such as the heap alloctor and scheduler. When set to '0', these checks will not take place resulting in 
+// such as the heap alloctor and scheduler. When set to '0', these checks will not take place resulting in
 // lower code size and faster operation of low level component.
 //
 #ifndef CODAL_LOW_LEVEL_VALIDATION
@@ -172,6 +192,10 @@ DEALINGS IN THE SOFTWARE.
 // If USB enabled, also enable WebUSB by default
 #ifndef DEVICE_WEBUSB
 #define DEVICE_WEBUSB                         1
+#endif
+
+#ifndef CODAL_PROVIDE_PRINTF
+#define CODAL_PROVIDE_PRINTF           1
 #endif
 
 //

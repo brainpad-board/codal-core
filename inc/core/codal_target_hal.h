@@ -29,17 +29,27 @@ DEALINGS IN THE SOFTWARE.
 
 extern "C"
 {
-    uint32_t target_state_irq();
-	
     void target_enable_irq();
 
     void target_disable_irq();
 
     void target_reset();
 
-    void target_wait(unsigned long milliseconds);
+    void target_wait(uint32_t milliseconds);
+
+    void target_wait_us(uint32_t us);
+
+    int target_seed_random(uint32_t rand);
+
+    int target_random(int max);
+
+    uint64_t target_get_serial();
+
+    void target_scheduler_idle();
 
     void target_wait_for_event();
+  
+    void target_deepsleep();
 
     void target_panic(int statusCode);
 
@@ -71,7 +81,27 @@ extern "C"
     PROCESSOR_WORD_TYPE tcb_get_sp(void* tcb);
 
     void tcb_configure_args(void* tcb, PROCESSOR_WORD_TYPE ep, PROCESSOR_WORD_TYPE cp, PROCESSOR_WORD_TYPE pm);
+
+    /**
+     * Default implementation of atomic fetch and add opertaion.
+     * GCC provides this where possible, but this is not supported on some CPU architectures...
+     *
+     * @param ptr pointer to the memory to access.
+     * @param value the value to add to the memory location.
+     * @return the value of th ememory location BEFORE the add operation took place.
+     */
+    short unsigned int __sync_fetch_and_add_2 (volatile void *ptr, short unsigned int value);
+
 }
 
+// This is re-defined in targets with external flash, that require certain functions to be placed in RAM
+#ifndef REAL_TIME_FUNC
+#define REAL_TIME_FUNC /* */
+#endif
+
+// This is for cycle-precise wait even in presence of flash caches (forces function to sit in RAM)
+#ifndef FORCE_RAM_FUNC
+#define FORCE_RAM_FUNC __attribute__((noinline, long_call, section(".data")))
+#endif
 
 #endif

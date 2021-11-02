@@ -29,6 +29,7 @@ DEALINGS IN THE SOFTWARE.
  */
 
 #include "CodalConfig.h"
+#include "CodalDmesg.h"
 #include "TouchButton.h"
 #include "Timer.h"
 #include "EventModel.h"
@@ -93,6 +94,16 @@ void TouchButton::setThreshold(int threshold)
 }
 
 /**
+ * Determine the threshold currently in use by the TouchButton
+ * 
+ * @return the current threshold value
+ */
+int TouchButton::getThreshold()
+{
+    return this->threshold;
+}
+
+/**
  * Determine the last reading taken from this button.
  *
  * @return the last reading taken.
@@ -109,14 +120,22 @@ void TouchButton::setValue(int reading)
 {
     if (status & TOUCH_BUTTON_CALIBRATING)
     {
+        // if this is the first reading, take it as our best estimate
+        if (threshold == 0)
+            this->threshold = reading;
+
         // Record the highest value measured. This is our baseline.
         this->threshold = max(this->threshold, reading);
+
+#ifdef TOUCH_BUTTON_DECAY_AVERAGE
+        this->threshold = ((this->threshold * (100-TOUCH_BUTTON_DECAY_AVERAGE)) / 100) + ((reading * TOUCH_BUTTON_DECAY_AVERAGE) / 100);
+#endif
         this->reading--;
 
-        // We've completed calibration, returnt to normal mode of operation.
+        // We've completed calibration, return to normal mode of operation.
         if (this->reading == 0)
         {
-            this->threshold += ((this->threshold * 5) / 100) + TOUCH_BUTTON_CALIBRATION_LINEAR_OFFSET;
+            this->threshold += ((this->threshold * TOUCH_BUTTON_SENSITIVITY) / 100) + TOUCH_BUTTON_CALIBRATION_LINEAR_OFFSET;
             status &= ~TOUCH_BUTTON_CALIBRATING;
         }
 
@@ -125,6 +144,9 @@ void TouchButton::setValue(int reading)
 
     // Otherewise we're not calibrating, so simply record the result.
     this->reading = reading;
+#ifdef TOUCH_BUTTON_DECAY_AVERAGE
+    this->reading = ((this->reading * (100-TOUCH_BUTTON_DECAY_AVERAGE)) / 100) + ((reading * TOUCH_BUTTON_DECAY_AVERAGE) / 100);
+#endif
 }
 
 

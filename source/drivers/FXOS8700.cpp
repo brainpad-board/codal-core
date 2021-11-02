@@ -29,8 +29,6 @@ DEALINGS IN THE SOFTWARE.
  * Also includes basic data caching and on demand activation.
  */
 #include "FXOS8700.h"
-#include "FXOS8700Accelerometer.h"
-#include "FXOS8700Magnetometer.h"
 #include "ErrorNo.h"
 #include "Event.h"
 #include "CodalCompat.h"
@@ -82,8 +80,9 @@ int FXOS8700::configure()
     uint8_t value;
 
     // First find the nearest sample rate to that specified.
-    samplePeriod = accelerometerPeriod.getKey(samplePeriod * 1000) / 1000;
-    sampleRange = accelerometerRange.getKey(sampleRange);
+    Accelerometer::samplePeriod = accelerometerPeriod.getKey(Accelerometer::samplePeriod * 2000) / 1000;
+    Accelerometer::sampleRange = accelerometerRange.getKey(Accelerometer::sampleRange);
+    Compass::samplePeriod = Accelerometer::samplePeriod;
 
     // Now configure the accelerometer accordingly.
 
@@ -118,9 +117,13 @@ int FXOS8700::configure()
         return DEVICE_I2C_ERROR;
     }
 
-    // Configure PushPull Active LOW interrupt mode.
-    // n.b. This may need to be reconfigured if the interrupt line is shared.
+    // Configure Active LOW interrupt mode.
+    // Use OpenDrain configuation if we're on a shared IRQ line, PUSHPULL configuration otherwise. 
+#if CONFIG_ENABLED(DEVICE_I2C_IRQ_SHARED)
+    value = 0x01;
+#else
     value = 0x00;
+#endif
     result = i2c.writeRegister(address, FXOS8700_CTRL_REG3, value);
     if (result != 0)
     {
@@ -129,8 +132,6 @@ int FXOS8700::configure()
     }
 
     // Enable a data ready interrupt.
-    // TODO: This is currently PUSHPULL mode. This may nede to be reconfigured
-    // to OPEN_DRAIN if the interrupt line is shared.
     value = 0x01;
     result = i2c.writeRegister(address, FXOS8700_CTRL_REG4, value);
     if (result != 0)
@@ -149,7 +150,7 @@ int FXOS8700::configure()
     }
 
     // Configure acceleromter g range.
-    value = accelerometerRange.get(sampleRange);
+    value = accelerometerRange.get(Accelerometer::sampleRange);
     result = i2c.writeRegister(address, FXOS8700_XYZ_DATA_CFG, value);
     if (result != 0)
     {
@@ -158,7 +159,7 @@ int FXOS8700::configure()
     }
 
     // Configure sample rate and re-enable the sensor.
-    value = accelerometerPeriod.get(samplePeriod * 1000) | 0x01;
+    value = accelerometerPeriod.get(Accelerometer::samplePeriod * 1000) | 0x01;
     result = i2c.writeRegister(address, FXOS8700_CTRL_REG1, value);
     if (result != 0)
     {
@@ -178,42 +179,23 @@ int FXOS8700::configure()
   * @param address the default I2C address of the accelerometer. Defaults to: FXS8700_DEFAULT_ADDR.
   *
  */
-FXOS8700::FXOS8700(I2C& _i2c, Pin &_int1, uint16_t address) : i2c(_i2c), int1(_int1), accelerometerSample(), magnetometerSample()
+FXOS8700::FXOS8700(I2C &_i2c, Pin &_int1, CoordinateSpace &coordinateSpace, uint16_t address, uint16_t aid, uint16_t cid) : Accelerometer(coordinateSpace, aid), Compass(coordinateSpace, cid), i2c(_i2c), int1(_int1)
 {
     // Store our identifiers.
-    this->status = 0;
     this->address = address;
-    this->accelerometerAPI = NULL;
-    this->magnetometerAPI = NULL;
-
-    // Update our internal state for 50Hz at +/- 2g (50Hz has a period af 20ms, which we double here as we're in "hybrid mode").
-    this->samplePeriod = 40;
-    this->sampleRange = 2;
 
     // Configure and enable the accelerometer.
     configure();
 }
 
 /**
-  * Attempts to read the 8 bit ID from the accelerometer, this can be used for
-  * validation purposes.
-  *
-  * @return the 8 bit ID returned by the accelerometer, or DEVICE_I2C_ERROR if the request fails.
-  *
-  * @code
-  * accelerometer.whoAmI();
-  * @endcode
-  */
-int FXOS8700::whoAmI()
+ * Attempts to read the 8 bit WHO_AM_I value from the accelerometer
+ *
+ * @return true if the WHO_AM_I value is succesfully read. false otherwise.
+ */
+int FXOS8700::isDetected(I2C &i2c, uint16_t address)
 {
-    uint8_t data;
-    int result;
-
-    result = i2c.readRegister(address, FXOS8700_WHO_AM_I, &data, 1);
-    if (result !=0)
-        return DEVICE_I2C_ERROR;
-
-    return (int)data;
+    return i2c.readRegister(address, FXOS8700_WHO_AM_I) == FXOS8700_WHOAMI_VAL;
 }
 
 /**
@@ -229,148 +211,57 @@ int FXOS8700::whoAmI()
   *
   * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the read request fails.
   */
-int FXOS8700::updateSample()
+int FXOS8700::requestUpdate()
 {
     // Ensure we're scheduled to update the data periodically
-    status |= DEVICE_COMPONENT_STATUS_IDLE_TICK;
+    Accelerometer::status |= DEVICE_COMPONENT_STATUS_IDLE_TICK;
 
     // Poll interrupt line from device (ACTIVE LOW)
-    if(int1.getDigitalValue() == 0)
+    if(int1.isActive())
     {
         uint8_t data[12];
-        uint8_t *ptr;
+        FXOSRawSample sample;
+        uint8_t *lsb = (uint8_t *) &sample;
+        uint8_t *msb = lsb + 1;
         int result;
+
+#if CONFIG_ENABLED(DEVICE_I2C_IRQ_SHARED)
+        // Determine if this device has all its data ready (we may be on a shared IRQ line)
+        uint8_t status_reg = i2c.readRegister(address, FXOS8700_STATUS_REG);
+        if((status_reg & FXOS8700_STATUS_DATA_READY) != FXOS8700_STATUS_DATA_READY)
+            return DEVICE_OK;
+#endif
 
         // Read the combined accelerometer and magnetometer data.
         result = i2c.readRegister(address, FXOS8700_OUT_X_MSB, data, 12);
 
         if (result !=0)
             return DEVICE_I2C_ERROR;
-
+        
         // read sensor data (and translate into signed little endian)
-        ptr = (uint8_t *)&accelerometerSample;
-        *ptr++ = data[1];
-        *ptr++ = data[0];
-        *ptr++ = data[3];
-        *ptr++ = data[2];
-        *ptr++ = data[5];
-        *ptr++ = data[4];
+        for (int i=0; i<12; i+=2)
+        {
+            *msb = data[i]; 
+            *lsb = data[i+1];
+            msb += 2;
+            lsb += 2;
+        }
 
-        ptr = (uint8_t *)&magnetometerSample;
-        *ptr++ = data[7];
-        *ptr++ = data[6];
-        *ptr++ = data[9];
-        *ptr++ = data[8];
-        *ptr++ = data[11];
-        *ptr++ = data[10];
+        // scale the 14 bit accelerometer data (packed into 16 bits) into SI units (milli-g), and translate to ENU coordinate system
+        Accelerometer::sampleENU.x = (-sample.ay * Accelerometer::sampleRange) / 32;
+        Accelerometer::sampleENU.y = (sample.ax * Accelerometer::sampleRange) / 32;
+        Accelerometer::sampleENU.z = (sample.az * Accelerometer::sampleRange) / 32;
 
-        // scale the 14 bit data (packed into 16 bits) into SI units (milli-g)
-        accelerometerSample.x = (accelerometerSample.x * this->sampleRange) / 32;
-        accelerometerSample.y = (accelerometerSample.y * this->sampleRange) / 32;
-        accelerometerSample.z = (accelerometerSample.z * this->sampleRange) / 32;
+        // translate magnetometer data into ENU coordinate system and normalise into nano-teslas
+        Compass::sampleENU.x = FXOS8700_NORMALIZE_SAMPLE(-sample.cy);
+        Compass::sampleENU.y = FXOS8700_NORMALIZE_SAMPLE(sample.cx);
+        Compass::sampleENU.z = FXOS8700_NORMALIZE_SAMPLE(sample.cz);
 
-        // align to ENU coordinate system
-        accelerometerSample.x = -accelerometerSample.x;
-        magnetometerSample.x = -magnetometerSample.x;
-
-        //DMESG("ENU: [AX:%d][AY:%d][AZ:%d][MX:%d][MY:%d][MZ:%d]", accelerometerSample.x, accelerometerSample.y, accelerometerSample.z, magnetometerSample.x, magnetometerSample.y, magnetometerSample.z);
-
-        if (accelerometerAPI)
-            accelerometerAPI->dataReady();
-
-        if (magnetometerAPI)
-            magnetometerAPI->dataReady();
+        Accelerometer::update();
+        Compass::update();    
     }
 
     return DEVICE_OK;
-}
-
-/**
-  * Attempts to set the sample rate of the accelerometer to the specified value (in ms).
-  *
-  * @param period the requested time between samples, in milliseconds.
-  *
-  * @return DEVICE_OK on success, DEVICE_I2C_ERROR is the request fails.
-  *
-  * @code
-  * // sample rate is now 20 ms.
-  * accelerometer.setPeriod(20);
-  * @endcode
-  *
-  * @note The requested rate may not be possible on the hardware. In this case, the
-  * nearest lower rate is chosen.
-  */
-int FXOS8700::setPeriod(int period)
-{
-    samplePeriod = period;
-    return configure();
-}
-
-/**
-  * Reads the currently configured sample rate of the accelerometer.
-  *
-  * @return The time between samples, in milliseconds.
-  */
-int FXOS8700::getPeriod()
-{
-    return (int)samplePeriod;
-}
-
-/**
-  * Attempts to set the sample range of the accelerometer to the specified value (in g).
-  *
-  * @param range The requested sample range of samples, in g.
-  *
-  * @return DEVICE_OK on success, DEVICE_I2C_ERROR is the request fails.
-  *
-  * @code
-  * // the sample range of the accelerometer is now 8G.
-  * accelerometer.setRange(8);
-  * @endcode
-  *
-  * @note The requested range may not be possible on the hardware. In this case, the
-  * nearest lower range is chosen.
-  */
-int FXOS8700::setRange(int range)
-{
-    sampleRange = range;
-    return configure();
-}
-
-/**
-  * Reads the currently configured sample range of the accelerometer.
-  *
-  * @return The sample range, in g.
-  */
-int FXOS8700::getRange()
-{
-    return (int)sampleRange;
-}
-
-/**
- * Reads the accelerometer data from the latest update retrieved from the accelerometer.
- * Data is provided in ENU format, relative to the device package (and makes no attempt
- * to align axes to the device).
- *
- * @return The force measured in each axis, in milli-g.
- *
- */
-Sample3D FXOS8700::getAccelerometerSample()
-{
-    return accelerometerSample;
-}
-
-/**
- * Reads the magnetometer data from the latest update retrieved from the magnetometer.
- * Data is provided in ENU format, relative to the device package (and makes no attempt
- * to align axes to the device).
- *
- * @return The magnetic force measured in each axis, in micro-teslas.
- *
- */
-Sample3D FXOS8700::getMagnetometerSample()
-{
-    return magnetometerSample;
 }
 
 /**
@@ -380,27 +271,7 @@ Sample3D FXOS8700::getMagnetometerSample()
   */
 void FXOS8700::idleCallback()
 {
-    updateSample();
-}
-
-/**
- * Register a higher level driver for our accelerometer functions
- *
- * @param a A pointer to an instance of the FXOS8700Accelerometer class to inform when new data is available.
- */
-void FXOS8700::setAccelerometerAPI(FXOS8700Accelerometer *a)
-{
-    accelerometerAPI = a;
-}
-
-/**
- * Register a higher level driver for our magnetometer functions
- *
- * @param a A pointer to an instance of the FXOS8700Magnetometer class to inform when new data is available.
- */
-void FXOS8700::setMagnetometerAPI(FXOS8700Magnetometer *m)
-{
-    magnetometerAPI = m;
+    requestUpdate();
 }
 
 /**

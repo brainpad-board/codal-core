@@ -41,10 +41,25 @@ void DataSource::connect(DataSink& )
 {
 }
 
+void DataSource::disconnect()
+{
+}
+
+int DataSource::getFormat()
+{
+    return DATASTREAM_FORMAT_UNKNOWN;
+}
+
+int DataSource::setFormat(int format)
+{
+    return DEVICE_NOT_SUPPORTED;
+}
+
 int DataSink::pullRequest()
 {
 	return DEVICE_NOT_SUPPORTED;
 }
+
 
 /**
   * Class definition for DataStream.
@@ -143,17 +158,26 @@ bool DataStream::isReadOnly()
 /**
  * Define a downstream component for data stream.
  *
- * @sink The component that data will be delivered to, when it is availiable
+ * @sink The component that data will be delivered to, when it is available
  */
 void DataStream::connect(DataSink &sink)
 {
 	this->downStream = &sink;
+    this->upStream->connect(*this);
+}
+
+/**
+ *  Determine the data format of the buffers streamed out of this component.
+ */
+int DataStream::getFormat()
+{
+    return upStream->getFormat();
 }
 
 /**
  * Define a downstream component for data stream.
  *
- * @sink The component that data will be delivered to, when it is availiable
+ * @sink The component that data will be delivered to, when it is available
  */
 void DataStream::disconnect()
 {
@@ -273,16 +297,20 @@ int DataStream::pullRequest()
     // As there is either space available in the buffer or we want to block, pull the upstream buffer to release resources there.
     ManagedBuffer buffer = upStream->pull();
 
-    // If the buffer is full or we're behind another fiber, then wait for space to become available.
-    if (full() || writers)
-        fiber_wake_on_event(DEVICE_ID_NOTIFY, spaceAvailableEventCode);
+    // If pull is called multiple times in a row (yielding nothing after the first time)
+    // several streams might be woken up, despite the fact that there is no space for them.
+    do {
+        // If the buffer is full or we're behind another fiber, then wait for space to become available.
+        if (full() || writers)
+            fiber_wake_on_event(DEVICE_ID_NOTIFY, spaceAvailableEventCode);
 
-    if (full() || writers)
-    {
-        writers++;
-        schedule();
-        writers--;
-    }
+        if (full() || writers)
+        {
+            writers++;
+            schedule();
+            writers--;
+        }
+    } while (bufferCount >= DATASTREAM_MAXIMUM_BUFFERS);
 
 	stream[bufferCount] = buffer;
 	bufferLength = bufferLength + buffer.length();
@@ -294,6 +322,7 @@ int DataStream::pullRequest()
             downStream->pullRequest();
         else
             Event(DEVICE_ID_NOTIFY, pullRequestEventCode);
+        
     }
 
 	return DEVICE_OK;

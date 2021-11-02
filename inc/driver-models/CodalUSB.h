@@ -26,8 +26,14 @@ DEALINGS IN THE SOFTWARE.
 #define CODAL_USB_H
 
 #include "CodalConfig.h"
+#include "CodalComponent.h"
 
 #if CONFIG_ENABLED(DEVICE_USB)
+
+// define usb events for the CODAL message bus
+#define USB_EVT_CONNECTED       1   // powered usb cable has been plugged into the device
+#define USB_EVT_REMOVED         2   // powered usb cable has been removed from the device
+#define USB_EVT_READY           3   // powered usb cable with data connection has been plugged into the device, and the usb peripheral is ready!
 
 #include <stdint.h>
 #include "ErrorNo.h"
@@ -211,7 +217,6 @@ public:
 class UsbEndpointOut
 {
     uint8_t buf[USB_MAX_PKT_SIZE];
-    void startRead();
 
 public:
     volatile uint32_t userdata;
@@ -223,12 +228,14 @@ public:
     // when IRQ disabled, endpointRequest() callback will not be called (generally)
     int disableIRQ();
     int enableIRQ();
+    void startRead();
 
     UsbEndpointOut(uint8_t idx, uint8_t type, uint8_t size = USB_MAX_PKT_SIZE);
 };
 
 void usb_configure(uint8_t numEndpoints);
 void usb_set_address(uint16_t wValue);
+void usb_set_address_pre(uint16_t wValue);
 
 class CodalUSBInterface
 {
@@ -255,11 +262,16 @@ public:
     virtual bool enableWebUSB() { return false; }
 };
 
-class CodalUSB
+class CodalDummyUSBInterface : public CodalUSBInterface {
+  public:
+    virtual const InterfaceInfo *getInterfaceInfo();
+};
+
+class CodalUSB : public codal::CodalComponent
 {
     uint8_t endpointsUsed;
     uint8_t startDelayCount;
-    uint8_t firstWebUSBInterfaceIdx;
+    uint8_t numWebUSBInterfaces;
 
     int sendConfig();
     int sendDescriptors(USBSetup &setup);
@@ -271,13 +283,14 @@ public:
 
     // initialized by constructor, can be overriden before start()
     uint8_t numStringDescriptors;
+    uint8_t maxPower;
     const char **stringDescriptors;
     const DeviceDescriptor *deviceDescriptor;
 
     UsbEndpointIn *ctrlIn;
     UsbEndpointOut *ctrlOut;
 
-    CodalUSB();
+    CodalUSB(uint16_t id = DEVICE_ID_USB);
 
     int add(CodalUSBInterface &interface);
 

@@ -22,8 +22,8 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 */
 
-#ifndef CODAL_ACCELEROMTER_H
-#define CODAL_ACCELEROMTER_H
+#ifndef CODAL_ACCELEROMETER_H
+#define CODAL_ACCELEROMETER_H
 
 #include "CodalConfig.h"
 #include "CodalComponent.h"
@@ -56,6 +56,7 @@ DEALINGS IN THE SOFTWARE.
 #define ACCELEROMETER_EVT_6G                       9
 #define ACCELEROMETER_EVT_8G                       10
 #define ACCELEROMETER_EVT_SHAKE                    11
+#define ACCELEROMETER_EVT_2G                       12
 
 /**
   * Gesture recogniser constants
@@ -64,6 +65,7 @@ DEALINGS IN THE SOFTWARE.
 #define ACCELEROMETER_TILT_TOLERANCE               200
 #define ACCELEROMETER_FREEFALL_TOLERANCE           400
 #define ACCELEROMETER_SHAKE_TOLERANCE              400
+#define ACCELEROMETER_2G_TOLERANCE                 2048
 #define ACCELEROMETER_3G_TOLERANCE                 3072
 #define ACCELEROMETER_6G_TOLERANCE                 6144
 #define ACCELEROMETER_8G_TOLERANCE                 8192
@@ -73,6 +75,7 @@ DEALINGS IN THE SOFTWARE.
 
 #define ACCELEROMETER_REST_THRESHOLD               (ACCELEROMETER_REST_TOLERANCE * ACCELEROMETER_REST_TOLERANCE)
 #define ACCELEROMETER_FREEFALL_THRESHOLD           ((uint32_t)ACCELEROMETER_FREEFALL_TOLERANCE * (uint32_t)ACCELEROMETER_FREEFALL_TOLERANCE)
+#define ACCELEROMETER_2G_THRESHOLD                 ((uint32_t)ACCELEROMETER_2G_TOLERANCE * (uint32_t)ACCELEROMETER_2G_TOLERANCE)
 #define ACCELEROMETER_3G_THRESHOLD                 ((uint32_t)ACCELEROMETER_3G_TOLERANCE * (uint32_t)ACCELEROMETER_3G_TOLERANCE)
 #define ACCELEROMETER_6G_THRESHOLD                 ((uint32_t)ACCELEROMETER_6G_TOLERANCE * (uint32_t)ACCELEROMETER_6G_TOLERANCE)
 #define ACCELEROMETER_8G_THRESHOLD                 ((uint32_t)ACCELEROMETER_8G_TOLERANCE * (uint32_t)ACCELEROMETER_8G_TOLERANCE)
@@ -86,7 +89,7 @@ namespace codal
                     x:1,
                     y:1,
                     z:1,
-                    unused,
+                    impulse_2,
                     impulse_3,
                     impulse_6,
                     impulse_8,
@@ -185,7 +188,7 @@ namespace codal
 
         /**
          * Poll to see if new data is available from the hardware. If so, update it.
-         * n.b. it is not necessary to explicitly call this funciton to update data
+         * n.b. it is not necessary to explicitly call this function to update data
          * (it normally happens in the background when the scheduler is idle), but a check is performed
          * if the user explicitly requests up to date data.
          *
@@ -208,7 +211,7 @@ namespace codal
          *
          * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the read request fails.
          */
-        virtual int update(Sample3D s);
+        virtual int update();
 
         /**
           * Reads the last accelerometer value stored, and provides it in the coordinate system requested.

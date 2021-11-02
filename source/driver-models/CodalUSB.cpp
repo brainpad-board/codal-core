@@ -26,6 +26,14 @@ DEALINGS IN THE SOFTWARE.
 
 #if CONFIG_ENABLED(DEVICE_USB)
 
+// If DEVICE_USB_ENDPOINT_SHARING in and out endpoints will always get the same index.
+// This works on STM32F4. Can define on SAMD and elsewhere when tested.
+#if defined(DEVICE_USB_ENDPOINT_SHARING)
+#define NUM_ENDPOINTS(x) ((x) > 1 ? 1 : (x))
+#else
+#define NUM_ENDPOINTS(x) (x)
+#endif
+
 #include "ErrorNo.h"
 #include "CodalDmesg.h"
 #include "codal_target_hal.h"
@@ -34,7 +42,7 @@ DEALINGS IN THE SOFTWARE.
 
 CodalUSB *CodalUSB::usbInstance = NULL;
 
-//#define LOG DMESG
+// #define LOG DMESG
 #define LOG(...)
 
 static uint8_t usb_initialised = 0;
@@ -43,7 +51,7 @@ static uint8_t usb_status = 0;
 // static uint8_t usb_suspended = 0; // copy of UDINT to check SUSPI and WAKEUPI bits
 static uint8_t usb_configured = 0;
 
-static const ConfigDescriptor static_config = {9, 2, 0, 0, 1, 0, USB_CONFIG_BUS_POWERED, 250};
+static const ConfigDescriptor static_config = {9, 2, 0, 0, 1, 0, USB_CONFIG_BUS_POWERED, 0};
 
 static const DeviceDescriptor default_device_desc = {
     0x12, // bLength
@@ -82,7 +90,9 @@ static const char *default_strings[] = {
 #if CONFIG_ENABLED(DEVICE_WEBUSB)
 #define VENDOR_WEBUSB 0x40
 #define VENDOR_MS20 0x41
-#define WINUSB_SIZE 170
+
+#define WINUSB_SIZE()                                                                              \
+    (sizeof(msOS20Descriptor) + numWebUSBInterfaces * sizeof(msOS20FunctionDescriptor))
 
 static const uint8_t bosDescriptor[] = {
     0x05,       // Length
@@ -108,24 +118,18 @@ static const uint8_t bosDescriptor[] = {
     0xDF, 0x60, 0xDD, 0xD8, 0x89, 0x45, 0xC7, 0x4C, // MS OS 2.0 GUID
     0x9C, 0xD2, 0x65, 0x9D, 0x9E, 0x64, 0x8A, 0x9F, // MS OS 2.0 GUID
     0x00, 0x00, 0x03, 0x06,                         // Windows version
-    WINUSB_SIZE, 0x00,                              // Descriptor set length
-    VENDOR_MS20,                                    // Vendor request code
-    0x00                                            // Alternate enumeration code
+    0xff, 0xff,  // Descriptor set length; bosDescriptor[sizeof(bosDescriptor)-4]
+    VENDOR_MS20, // Vendor request code
+    0x00         // Alternate enumeration code
 };
 
-static const uint8_t msOS20Descriptor[] = {
-    // Microsoft OS 2.0 descriptor set header (table 10)
-    0x0A, 0x00,             // Descriptor size (10 bytes)
-    0x00, 0x00,             // MS OS 2.0 descriptor set header
-    0x00, 0x00, 0x03, 0x06, // Windows version (8.1) (0x06030000)
-    WINUSB_SIZE, 0x00,      // Size, MS OS 2.0 descriptor set
-
+static const uint8_t msOS20FunctionDescriptor[] = {
     // Microsoft OS 2.0 function subset header
-    0x08, 0x00,             // Descriptor size (8 bytes)
-    0x02, 0x00,             // MS OS 2.0 function subset header
-    0xff,                   // first interface no; msOS20Descriptor[14]
-    0x00,                   // Reserved
-    WINUSB_SIZE - 10, 0x00, // Size, MS OS 2.0 function subset
+    0x08, 0x00, // Descriptor size (8 bytes)
+    0x02, 0x00, // MS OS 2.0 function subset header
+    0xff,       // first interface no; msOS20FunctionDescriptor[4]
+    0x00,       // Reserved
+    160, 0x00,  // Size, MS OS 2.0 function subset
 
     // Microsoft OS 2.0 compatible ID descriptor (table 13)
     20, 0x00,                     // wLength
@@ -146,11 +150,43 @@ static const uint8_t msOS20Descriptor[] = {
     '{', 0, '9', 0, '2', 0, 'C', 0, 'E', 0, '6', 0, '4', 0, '6', 0, '2', 0, '-', 0, '9', 0, 'C', 0,
     '7', 0, '7', 0, '-', 0, '4', 0, '6', 0, 'F', 0, 'E', 0, '-', 0, '9', 0, '3', 0, '3', 0, 'B', 0,
     '-', 0, '3', 0, '1', 0, 'C', 0, 'B', 0, '9', 0, 'C', 0, '5', 0, 'A', 0, 'A', 0, '3', 0, 'B', 0,
-    '9', 0, '}', 0, 0, 0, 0, 0};
+    'A', 0, '}', 0, 0, 0, 0, 0};
+
+static const uint8_t msOS20Descriptor[] = {
+    // Microsoft OS 2.0 descriptor set header (table 10)
+    0x0A, 0x00,             // Descriptor size (10 bytes)
+    0x00, 0x00,             // MS OS 2.0 descriptor set header
+    0x00, 0x00, 0x03, 0x06, // Windows version (8.1) (0x06030000)
+    0xff, 0xff,             // Size, MS OS 2.0 descriptor set
+};
 #endif
 
-CodalUSB::CodalUSB()
+static const InterfaceInfo codalDummyIfaceInfo = {
+    NULL,
+    0,
+    0,
+    {
+        0,    // numEndpoints
+        0xff, /// class code - vendor-specific
+        0xff, // subclass
+        0xff, // protocol
+        0x00, // string
+        0x00, // alt
+    },
+    {0, 0},
+    {0, 0},
+};
+
+const InterfaceInfo *CodalDummyUSBInterface::getInterfaceInfo()
 {
+    return &codalDummyIfaceInfo;
+}
+
+CodalUSB::CodalUSB(uint16_t id)
+{
+    // Store our identifiers.
+    this->id = id;
+    this->status = 0;
     usbInstance = this;
     endpointsUsed = 1; // CTRL endpoint
     ctrlIn = NULL;
@@ -160,7 +196,8 @@ CodalUSB::CodalUSB()
     deviceDescriptor = &default_device_desc;
     startDelayCount = 1;
     interfaces = NULL;
-    firstWebUSBInterfaceIdx = 0xff;
+    numWebUSBInterfaces = 0;
+    maxPower = 50; // 100mA; if set to 500mA can't connect to iOS devices
 }
 
 void CodalUSBInterface::fillInterfaceInfo(InterfaceDescriptor *descp)
@@ -200,6 +237,7 @@ int CodalUSB::sendConfig()
     memcpy(buf, &static_config, sizeof(ConfigDescriptor));
     ((ConfigDescriptor *)buf)->clen = clen;
     ((ConfigDescriptor *)buf)->numInterfaces = numInterfaces;
+    ((ConfigDescriptor *)buf)->maxPower = maxPower;
     clen = sizeof(ConfigDescriptor);
 
 #define ADD_DESC(desc)                                                                             \
@@ -220,21 +258,25 @@ int CodalUSB::sendConfig()
             clen += info->supplementalDescriptorSize;
         }
 
-        EndpointDescriptor epdescIn = {
-            sizeof(EndpointDescriptor),
-            5, // type
-            (uint8_t)(0x80 | iface->in->ep),
-            info->epIn.attr,
-            USB_MAX_PKT_SIZE,
-            info->epIn.interval,
-        };
-        ADD_DESC(epdescIn);
-
-        if (info->iface.numEndpoints == 1)
+        if (info->iface.numEndpoints == 0)
         {
             // OK
         }
-        else if (info->iface.numEndpoints == 2)
+
+        if (info->iface.numEndpoints >= 1)
+        {
+            EndpointDescriptor epdescIn = {
+                sizeof(EndpointDescriptor),
+                5, // type
+                (uint8_t)(0x80 | iface->in->ep),
+                info->epIn.attr,
+                USB_MAX_PKT_SIZE,
+                info->epIn.interval,
+            };
+            ADD_DESC(epdescIn);
+        }
+
+        if (info->iface.numEndpoints >= 2)
         {
             EndpointDescriptor epdescOut = {
                 sizeof(EndpointDescriptor),
@@ -246,7 +288,8 @@ int CodalUSB::sendConfig()
             };
             ADD_DESC(epdescOut);
         }
-        else
+
+        if (info->iface.numEndpoints >= 3)
         {
             usb_assert(0);
         }
@@ -275,10 +318,12 @@ int CodalUSB::sendDescriptors(USBSetup &setup)
         return send(deviceDescriptor, sizeof(DeviceDescriptor));
 
 #if CONFIG_ENABLED(DEVICE_WEBUSB)
-    if (type == USB_BOS_DESCRIPTOR_TYPE && firstWebUSBInterfaceIdx != 0xff)
+    if (type == USB_BOS_DESCRIPTOR_TYPE && numWebUSBInterfaces > 0)
     {
         uint8_t buf[sizeof(bosDescriptor)];
         memcpy(buf, bosDescriptor, sizeof(buf));
+        buf[sizeof(bosDescriptor) - 4] = WINUSB_SIZE() & 0xff;
+        buf[sizeof(bosDescriptor) - 3] = WINUSB_SIZE() >> 8;
         return send(buf, sizeof(buf));
     }
 #endif
@@ -331,7 +376,7 @@ int CodalUSB::add(CodalUSBInterface &interface)
 {
     usb_assert(!usb_configured);
 
-    uint8_t epsConsumed = interface.getInterfaceInfo()->allocateEndpoints;
+    uint8_t epsConsumed = NUM_ENDPOINTS(interface.getInterfaceInfo()->allocateEndpoints);
 
     if (endpointsUsed + epsConsumed > DEVICE_USB_ENDPOINTS)
         return DEVICE_NO_RESOURCES;
@@ -403,10 +448,10 @@ int CodalUSB::interfaceRequest(USBSetup &setup, bool isClass)
 
 void CodalUSB::setupRequest(USBSetup &setup)
 {
-    DMESG("SETUP Req=%x type=%x val=%x:%x idx=%x len=%d", setup.bRequest, setup.bmRequestType,
-          setup.wValueH, setup.wValueL, setup.wIndex, setup.wLength);
+    LOG("SETUP Req=%x type=%x val=%x:%x idx=%x len=%d", setup.bRequest, setup.bmRequestType,
+        setup.wValueH, setup.wValueL, setup.wIndex, setup.wLength);
 
-    int status = DEVICE_OK;
+    int transactionStatus = DEVICE_OK;
 
     // Standard Requests
     uint16_t wValue = (setup.wValueH << 8) | setup.wValueL;
@@ -417,9 +462,11 @@ void CodalUSB::setupRequest(USBSetup &setup)
 
     if ((request_type & USB_REQ_TYPE) == USB_REQ_STANDARD)
     {
+        LOG("STD REQ");
         switch (setup.bRequest)
         {
         case USB_REQ_GET_STATUS:
+            LOG("STA");
             if (request_type == (USB_REQ_DEVICETOHOST | USB_REQ_STANDARD | USB_REQ_DEVICE))
             {
                 wStatus = usb_status;
@@ -428,6 +475,7 @@ void CodalUSB::setupRequest(USBSetup &setup)
             break;
 
         case USB_REQ_CLEAR_FEATURE:
+            LOG("CLR FEA");
             if ((request_type == (USB_REQ_HOSTTODEVICE | USB_REQ_STANDARD | USB_REQ_DEVICE)) &&
                 (wValue == USB_DEVICE_REMOTE_WAKEUP))
                 usb_status &= ~USB_FEATURE_REMOTE_WAKEUP_ENABLED;
@@ -445,34 +493,41 @@ void CodalUSB::setupRequest(USBSetup &setup)
             sendzlp();
             break;
         case USB_REQ_SET_FEATURE:
+            LOG("SET FEA");
             if ((request_type == (USB_REQ_HOSTTODEVICE | USB_REQ_STANDARD | USB_REQ_DEVICE)) &&
                 (wValue == USB_DEVICE_REMOTE_WAKEUP))
                 usb_status |= USB_FEATURE_REMOTE_WAKEUP_ENABLED;
             sendzlp();
             break;
         case USB_REQ_SET_ADDRESS:
+            LOG("SET ADDR");
+            usb_set_address_pre(wValue);
             sendzlp();
             usb_set_address(wValue);
             break;
         case USB_REQ_GET_DESCRIPTOR:
-            status = sendDescriptors(setup);
+            LOG("GET DESC");
+            transactionStatus = sendDescriptors(setup);
             break;
         case USB_REQ_SET_DESCRIPTOR:
+            LOG("SET DESC");
             stall();
             break;
         case USB_REQ_GET_CONFIGURATION:
+            LOG("GET CONF");
             wStatus = 1;
             send(&wStatus, 1);
             break;
 
         case USB_REQ_SET_CONFIGURATION:
+            LOG("SET CONF");
             if (USB_REQ_DEVICE == (request_type & USB_REQ_DESTINATION))
             {
                 usb_initialised = setup.wValueL;
                 sendzlp();
             }
             else
-                status = DEVICE_NOT_SUPPORTED;
+                transactionStatus = DEVICE_NOT_SUPPORTED;
             break;
         }
     }
@@ -482,33 +537,48 @@ void CodalUSB::setupRequest(USBSetup &setup)
         switch (setup.bRequest)
         {
         case VENDOR_MS20:
-            if (firstWebUSBInterfaceIdx == 0xff)
+            if (numWebUSBInterfaces == 0)
             {
-                status = DEVICE_NOT_SUPPORTED;
+                transactionStatus = DEVICE_NOT_SUPPORTED;
             }
             else
             {
-                uint8_t buf[sizeof(msOS20Descriptor)];
-                memcpy(buf, msOS20Descriptor, sizeof(buf));
-                usb_assert(buf[14] == 0xff);
-                buf[14] = firstWebUSBInterfaceIdx;
+                uint8_t buf[WINUSB_SIZE()];
+                memcpy(buf, msOS20Descriptor, sizeof(msOS20Descriptor));
+                buf[8] = WINUSB_SIZE();
+                buf[9] = WINUSB_SIZE() >> 8;
+                uint32_t ptr = sizeof(msOS20Descriptor);
+
+                for (CodalUSBInterface *iface = interfaces; iface; iface = iface->next)
+                {
+                    if (iface->enableWebUSB())
+                    {
+                        memcpy(buf + ptr, msOS20FunctionDescriptor,
+                               sizeof(msOS20FunctionDescriptor));
+                        buf[ptr + 4] = iface->interfaceIdx;
+                        ptr += sizeof(msOS20FunctionDescriptor);
+                    }
+                }
+
+                usb_assert(ptr == sizeof(buf));
+
                 send(buf, sizeof(buf));
             }
             break;
 
         case VENDOR_WEBUSB:
             // this is the place for the WebUSB landing page, if we ever want to do that
-            status = DEVICE_NOT_IMPLEMENTED;
+            transactionStatus = DEVICE_NOT_IMPLEMENTED;
             break;
         }
     }
 #endif
     else
     {
-        status = interfaceRequest(setup, true);
+        transactionStatus = interfaceRequest(setup, true);
     }
 
-    if (status < 0)
+    if (transactionStatus < 0)
         stall();
 
     // sending response clears this - make sure we did
@@ -536,7 +606,7 @@ void CodalUSB::initEndpoints()
     ctrlOut = new UsbEndpointOut(0, USB_EP_TYPE_CONTROL);
 
 #if CONFIG_ENABLED(DEVICE_WEBUSB)
-    firstWebUSBInterfaceIdx = 0xff;
+    numWebUSBInterfaces = 0;
 #endif
 
     for (CodalUSBInterface *iface = interfaces; iface; iface = iface->next)
@@ -544,18 +614,21 @@ void CodalUSB::initEndpoints()
         iface->interfaceIdx = ifaceCount++;
 
 #if CONFIG_ENABLED(DEVICE_WEBUSB)
-        if (firstWebUSBInterfaceIdx == 0xff && iface->enableWebUSB())
-            firstWebUSBInterfaceIdx = iface->interfaceIdx;
+        if (iface->enableWebUSB())
+            numWebUSBInterfaces++;
 #endif
 
         const InterfaceInfo *info = iface->getInterfaceInfo();
 
-        usb_assert(1 <= info->allocateEndpoints && info->allocateEndpoints <= 2);
+        usb_assert(0 <= info->allocateEndpoints && info->allocateEndpoints <= 2);
         usb_assert(info->allocateEndpoints <= info->iface.numEndpoints &&
                    info->iface.numEndpoints <= 2);
 
         if (iface->in)
+        {
             delete iface->in;
+            iface->in = NULL;
+        }
 
         if (iface->out)
         {
@@ -563,14 +636,18 @@ void CodalUSB::initEndpoints()
             iface->out = NULL;
         }
 
-        iface->in = new UsbEndpointIn(endpointCount, info->epIn.attr);
-        if (info->iface.numEndpoints > 1)
+        uint8_t numep = NUM_ENDPOINTS(info->allocateEndpoints);
+
+        if (info->iface.numEndpoints > 0)
         {
-            iface->out =
-                new UsbEndpointOut(endpointCount + (info->allocateEndpoints - 1), info->epIn.attr);
+            iface->in = new UsbEndpointIn(endpointCount, info->epIn.attr);
+            if (info->iface.numEndpoints > 1)
+            {
+                iface->out = new UsbEndpointOut(endpointCount + (numep - 1), info->epIn.attr);
+            }
         }
 
-        endpointCount += info->allocateEndpoints;
+        endpointCount += numep;
     }
 
     usb_assert(endpointsUsed == endpointCount);
