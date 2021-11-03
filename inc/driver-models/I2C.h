@@ -69,7 +69,7 @@ protected:
       * @param data The byte to write.
       * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
       */
-    virtual int write(uint8_t data);
+    virtual int write(uint16_t data);
 
     /**
     * Reads a single byte from the I2C bus.

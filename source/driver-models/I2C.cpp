@@ -68,7 +68,7 @@ namespace codal
     * @param data The byte to write.
     * @return DEVICE_OK on success, DEVICE_I2C_ERROR if the the write request failed.
     */
-    int I2C::write(uint8_t data)
+    int I2C::write(uint16_t data)
     {
         return DEVICE_NOT_IMPLEMENTED;
     }
@@ -122,23 +122,28 @@ namespace codal
      */
     int I2C::write(uint16_t address, uint8_t *data, int len, bool repeated)
     {
-        if (data == NULL || len <= 0)
-            return DEVICE_INVALID_PARAMETER; // Send a start condition
+		if (data == NULL || len <= 0)
+			return DEVICE_INVALID_PARAMETER; // Send a start condition
 
-        start();
+		start();
 
-        // Send the address of the slave, with a write bit set.
-        write((uint8_t)address);
+		// Send the address of the slave, with a write bit set.
+		write((uint16_t)(address & 0xFF));
 
-        // Send the body of the data
-        for (int i = 0; i < len; i++)
-            write(data[i]);
+		// Send the body of the data
+		for (int i = 0; i < len; i++) {
+			if (i == len-1)  {			// last byte
+				write((uint16_t)(0xFF00 | data[i]));
+		}
+		else
+			write((uint16_t)data[i]);
+		}
 
-        // Send a stop condition
-        if (!repeated)
-            stop();
+		// Send a stop condition
+		if (!repeated)
+			stop();
 
-        return DEVICE_OK;
+		return DEVICE_OK;
     }
 
     /**
