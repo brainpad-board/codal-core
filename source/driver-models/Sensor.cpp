@@ -88,7 +88,12 @@ void Sensor::updateSample()
     }
     else
     {
-        sensorValue = ((sensorValue * (1023 - sensitivity)) + (value * sensitivity)) >> 10;
+        if (this->id != DEVICE_ID_THERMOMETER) {
+			sensorValue = ((sensorValue * (1023 - sensitivity)) + (value * sensitivity)) >> 10;
+		}
+		else {
+			sensorValue = value;
+		}
     }
 
     checkThresholding();

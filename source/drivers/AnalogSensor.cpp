@@ -41,7 +41,11 @@ using namespace codal;
  */
 AnalogSensor::AnalogSensor(Pin &pin, uint16_t id) : Sensor( id), pin(pin)
 {
-    updateSample();
+    if (this->id == DEVICE_ID_THERMOMETER) {
+		this->pin.name = 0xF1; // Pin 0xF1 for temperature in MbedOS		
+	}
+		
+	updateSample();
 }
 
 /**
