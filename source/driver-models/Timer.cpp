@@ -65,11 +65,13 @@ void timer_callback(uint16_t chan)
 REAL_TIME_FUNC
 void Timer::triggerIn(CODAL_TIMESTAMP t)
 {
+#if TQD_TODO	
     if (t < CODAL_TIMER_MINIMUM_PERIOD) t = CODAL_TIMER_MINIMUM_PERIOD;
     // Just in case, disable all IRQs
     target_disable_irq();
     timer.setCompare(this->ccEventChannel, timer.captureCounter() + t);
     target_enable_irq();
+#endif	
 }
 
 REAL_TIME_FUNC
@@ -93,6 +95,28 @@ void Timer::releaseTimerEvent(TimerEvent *event)
         nextTimerEvent = NULL;
 }
 
+/**
+ * Constructor for a generic system clock interface.
+ */
+Timer::Timer()
+{
+    // Register ourselves as the defualt timer - most recent timer wins.
+    system_timer = this;
+
+    // Create an empty event list of the default size.
+    eventListSize = CODAL_TIMER_DEFAULT_EVENT_LIST_SIZE;
+    timerEventList = (TimerEvent *) malloc(sizeof(TimerEvent) * CODAL_TIMER_DEFAULT_EVENT_LIST_SIZE);
+    memclr(timerEventList, sizeof(TimerEvent) * CODAL_TIMER_DEFAULT_EVENT_LIST_SIZE);
+    nextTimerEvent = NULL;
+
+    // Reset clock
+    currentTime = 0;
+    currentTimeUs = 0;
+	
+	
+}
+
+#if TQD_TODO
 /**
  * Constructor for a generic system clock interface.
  */
@@ -124,7 +148,7 @@ Timer::Timer(LowLevelTimer& t, uint8_t ccPeriodChannel, uint8_t ccEventChannel) 
 
     system_timer_calibrate_cycles();
 }
-
+#endif
 /**
  * Retrieves the current time tracked by this Timer instance
  * in milliseconds
@@ -133,7 +157,7 @@ Timer::Timer(LowLevelTimer& t, uint8_t ccPeriodChannel, uint8_t ccEventChannel) 
  */
 CODAL_TIMESTAMP Timer::getTime()
 {
-    sync();
+    syncRequest(); //TQD_TODO sync();
     return currentTime;
 }
 
@@ -146,19 +170,19 @@ CODAL_TIMESTAMP Timer::getTime()
 REAL_TIME_FUNC
 CODAL_TIMESTAMP Timer::getTimeUs()
 {
-    sync();
+    syncRequest(); //TQD_TODO sync();
     return currentTimeUs;
 }
 
 int Timer::disableInterrupts()
 {
-    timer.disableIRQ();
+    //timer.disableIRQ();
     return DEVICE_OK;
 }
 
 int Timer::enableInterrupts()
 {
-    timer.enableIRQ();
+    //timer.enableIRQ();
     return DEVICE_OK;
 }
 
@@ -295,6 +319,7 @@ int Timer::eventEveryUs(CODAL_TIMESTAMP period, uint16_t id, uint16_t value, uin
 REAL_TIME_FUNC
 void Timer::sync()
 {
+#if TQD_TODO	
     // Need to disable all IRQs - for example if SPI IRQ is triggered during
     // sync(), it might call into getTimeUs(), which would call sync()
     target_disable_irq();
@@ -323,6 +348,8 @@ void Timer::sync()
     }
 
     target_enable_irq();
+	
+#endif	
 }
 
 REAL_TIME_FUNC
@@ -352,12 +379,13 @@ void Timer::recomputeNextTimerEvent()
  */
 void Timer::trigger(bool isFallback)
 {
-    if (isFallback)
-        timer.setCompare(ccPeriodChannel, timer.captureCounter() + 10000000);
+    if (isFallback) {
+        // timer.setCompare(ccPeriodChannel, timer.captureCounter() + 10000000);
+    }
 
     int eventsFired;
 
-    sync();
+    syncRequest(); //TQD_TODO sync();
 
     // Now, walk the list and trigger any events that are pending.
     do
@@ -441,6 +469,7 @@ TimerEvent *Timer::deepSleepWakeUpEvent()
 REAL_TIME_FUNC
 CODAL_TIMESTAMP Timer::deepSleepBegin( CODAL_TIMESTAMP &counter)
 {
+#if TQD_TODO	
     // Need to disable all IRQs - for example if SPI IRQ is triggered during
     // sync(), it might call into getTimeUs(), which would call sync()
     target_disable_irq();
@@ -472,6 +501,7 @@ CODAL_TIMESTAMP Timer::deepSleepBegin( CODAL_TIMESTAMP &counter)
     target_enable_irq();
 
     counter = val;
+#endif	
     return currentTimeUs;
 }
 
@@ -496,6 +526,7 @@ CODAL_TIMESTAMP Timer::deepSleepBegin( CODAL_TIMESTAMP &counter)
 REAL_TIME_FUNC
 void Timer::deepSleepEnd( CODAL_TIMESTAMP counter, CODAL_TIMESTAMP micros)
 {
+#if TQD_TODO
     // On entry, the timer IRQ is disabled and must not be enabled
     target_disable_irq();
 
@@ -558,6 +589,7 @@ void Timer::deepSleepEnd( CODAL_TIMESTAMP counter, CODAL_TIMESTAMP micros)
         timer.setCompare( ccEventChannel, counterNow + CODAL_TIMER_MINIMUM_PERIOD);
 
     target_enable_irq();
+#endif	
 }
 
 /**
