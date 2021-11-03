@@ -29,7 +29,9 @@ DEALINGS IN THE SOFTWARE.
 
 extern "C"
 {
-    void target_enable_irq();
+    uint32_t target_state_irq();
+
+	void target_enable_irq();
 
     void target_disable_irq();
 
