@@ -35,24 +35,30 @@ using namespace codal;
 
 static void logwrite(const char *msg);
 
+REAL_TIME_FUNC
 static void logwriten(const char *msg, int l)
 {
+    target_disable_irq();
+
     if (codalLogStore.ptr + l >= sizeof(codalLogStore.buffer))
     {
-        const int jump = sizeof(codalLogStore.buffer) / 4;
-        codalLogStore.ptr -= jump;
-        memmove(codalLogStore.buffer, codalLogStore.buffer + jump, codalLogStore.ptr);
-        // zero-out the rest so it looks OK in the debugger
-        memset(codalLogStore.buffer + codalLogStore.ptr, 0, sizeof(codalLogStore.buffer) - codalLogStore.ptr);
+        *(uint32_t *)codalLogStore.buffer = 0x0a2e2e2e; // "...\n"
+        codalLogStore.ptr = 4;
+        if (l >= (int)sizeof(codalLogStore.buffer) - 5)
+        {
+            msg = "DMESG line too long!\n";
+            l = 21;
+        }
     }
-    if (l + codalLogStore.ptr >= sizeof(codalLogStore.buffer))
-    {
-        logwrite("DMESG line too long!\n");
-        return;
-    }
-    memcpy(codalLogStore.buffer + codalLogStore.ptr, msg, l);
+
+    char *dst = &codalLogStore.buffer[codalLogStore.ptr];
+    int tmp = l;
+    while (tmp--)
+        *dst++ = *msg++;
+    *dst = 0;
     codalLogStore.ptr += l;
-    codalLogStore.buffer[codalLogStore.ptr] = 0;
+
+    target_enable_irq();
 }
 
 static void logwrite(const char *msg)
@@ -93,19 +99,27 @@ static void logwritenum(uint32_t n, bool full, bool hex)
     logwrite(buff);
 }
 
+void codal_dmesg_nocrlf(const char *format, ...)
+{
+    va_list arg;
+    va_start(arg, format);
+    codal_vdmesg(format, false, arg);
+    va_end(arg);
+}
+
 void codal_dmesg(const char *format, ...)
 {
     va_list arg;
     va_start(arg, format);
-    codal_vdmesg(format, arg);
+    codal_vdmesg(format, true, arg);
     va_end(arg);
 }
 
-void codal_dmesgf(const char *format, ...)
+void codal_dmesg_with_flush(const char *format, ...)
 {
     va_list arg;
     va_start(arg, format);
-    codal_vdmesg(format, arg);
+    codal_vdmesg(format, true, arg);
     va_end(arg);
     codal_dmesg_flush();
 }
@@ -121,11 +135,10 @@ void codal_dmesg_flush()
         dmesg_flush_fn();
 }
 
-void codal_vdmesg(const char *format, va_list ap)
+void codal_vdmesg(const char *format, bool crlf, va_list ap)
 {
     const char *end = format;
 
-    target_disable_irq();
     while (*end)
     {
         if (*end++ == '%')
@@ -137,6 +150,7 @@ void codal_vdmesg(const char *format, va_list ap)
             case 'c':
                 logwriten((const char *)&val, 1);
                 break;
+            case 'u': // should be printed as unsigned, but will do for now
             case 'd':
                 logwritenum(val, false, false);
                 break;
@@ -161,8 +175,9 @@ void codal_vdmesg(const char *format, va_list ap)
         }
     }
     logwriten(format, end - format);
-    logwrite("\r\n");
-    target_enable_irq();
+
+    if (crlf)
+        logwrite("\r\n");
 }
 
 #endif

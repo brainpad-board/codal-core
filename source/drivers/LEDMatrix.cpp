@@ -25,10 +25,11 @@ DEALINGS IN THE SOFTWARE.
 /**
   * Class definition for LEDMatrix.
   *
-  * A LEDMatrix represents the LED matrix array on the micro:bit.
+  * Represents an LED matrix array.
   */
 #include "LEDMatrix.h"
 #include "CodalFiber.h"
+#include "CodalDmesg.h"
 #include "ErrorNo.h"
 
 using namespace codal;
@@ -38,7 +39,7 @@ const int greyScaleTimings[LED_MATRIX_GREYSCALE_BIT_DEPTH] = {1, 23, 70, 163, 35
 /**
   * Constructor.
   *
-  * Create a software representation the micro:bit's 5x5 LED matrix.
+  * Create a software representation an LED matrix.
   * The display is initially blank.
   *
   * @param map The mapping information that relates pin inputs/outputs to physical screen coordinates.
@@ -150,8 +151,11 @@ void LEDMatrix::render()
     matrixMap.rowPins[strobeRow]->setDigitalValue(1);
 
     //timer does not have enough resolution for brightness of 1. 23.53 us
-    if(brightness != LED_MATRIX_MAXIMUM_BRIGHTNESS && brightness > LED_MATRIX_MINIMUM_BRIGHTNESS)
+    #pragma GCC diagnostic push
+    #pragma GCC diagnostic ignored "-Wtype-limits"
+    if(brightness <= LED_MATRIX_MAXIMUM_BRIGHTNESS && brightness > LED_MATRIX_MINIMUM_BRIGHTNESS)
         system_timer_event_after_us(frameTimeout, id, LED_MATRIX_EVT_FRAME_TIMEOUT);
+    #pragma GCC diagnostic pop
 
     //this will take around 23us to execute
     if(brightness <= LED_MATRIX_MINIMUM_BRIGHTNESS)
@@ -352,7 +356,7 @@ int LEDMatrix::setBrightness(int b)
         return result;
 
     // Precalculate the per frame "on" time for this brightness level.
-    frameTimeout = ((brightness * 950) / (LED_MATRIX_MAXIMUM_BRIGHTNESS)) * SCHEDULER_TICK_PERIOD_US;
+    frameTimeout = (((int)brightness) * 1024 * SCHEDULER_TICK_PERIOD_US) / (255 * 1024);
 
     return DEVICE_OK;
 }

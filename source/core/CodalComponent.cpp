@@ -33,6 +33,10 @@ CodalComponent* CodalComponent::components[DEVICE_COMPONENT_COUNT];
 
 uint8_t CodalComponent::configuration = 0;
 
+#if DEVICE_COMPONENT_COUNT > 255
+#error "DEVICE_COMPONENT_COUNT has to fit in uint8_t"
+#endif
+
 /**
   * The periodic callback for all components.
   */
@@ -112,5 +116,71 @@ void CodalComponent::removeComponent()
         }
 
         i++;
+    }
+}
+
+/**
+ * Puts all components in (or out of) sleep (low power) mode.
+ */
+void CodalComponent::setAllSleep(bool doSleep)
+{
+    deepSleepAll( doSleep ? deepSleepCallbackBegin : deepSleepCallbackEnd, NULL);
+}
+
+/**
+  * Perform functions related to deep sleep.
+  */
+int CodalComponent::deepSleepCallback( deepSleepCallbackReason reason, deepSleepCallbackData *data)
+{ 
+    switch ( reason)
+    {
+        case deepSleepCallbackBegin:
+        case deepSleepCallbackBeginWithWakeUps:
+          setSleep(true);
+          break;
+
+        case deepSleepCallbackEnd:
+        case deepSleepCallbackEndWithWakeUps:
+          setSleep(false);
+          break;
+
+        default:
+            break;
+    }
+
+    return DEVICE_OK;
+}
+
+/**
+  * Perform functions related to deep sleep.
+  */
+void CodalComponent::deepSleepAll( deepSleepCallbackReason reason, deepSleepCallbackData *data)
+{
+    // usually, dependencies of component X are added before X itself,
+    // so iterate backwards (so from high-level components to low-level)
+    // when putting stuff to sleep, and forwards when waking up
+
+    switch ( reason)
+    {
+        case deepSleepCallbackPrepare:
+        case deepSleepCallbackBegin:
+        case deepSleepCallbackBeginWithWakeUps:
+        case deepSleepCallbackCountWakeUps:
+            for (unsigned i = 0; i < DEVICE_COMPONENT_COUNT; i++)
+            {
+                if (components[i])
+                    components[i]->deepSleepCallback( reason, data);
+            }
+            break;
+
+        case deepSleepCallbackEnd:
+        case deepSleepCallbackEndWithWakeUps:
+        case deepSleepCallbackClearWakeUps:
+            for (int i = DEVICE_COMPONENT_COUNT - 1; i >= 0; i--)
+            {
+                if (components[i])
+                    components[i]->deepSleepCallback( reason, data);
+            }
+            break;
     }
 }

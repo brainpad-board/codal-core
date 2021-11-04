@@ -28,6 +28,7 @@ DEALINGS IN THE SOFTWARE.
 #include "Pin.h"
 #include "SPI.h"
 #include "Event.h"
+#include "ScreenIO.h"
 
 namespace codal
 {
@@ -42,13 +43,25 @@ struct ST7735WorkBuffer;
 #define MADCTL_BGR 0x08
 #define MADCTL_MH 0x04
 
-class ST7735
+class ST7735 : public CodalComponent
 {
-    SPI &spi;
-    Pin &cs;
-    Pin &dc;
+protected:
+    ScreenIO &io;
+    Pin *cs;
+    Pin *dc;
     uint8_t cmdBuf[20];
     ST7735WorkBuffer *work;
+    bool inSleepMode;
+
+    // if true, every pixel will be plotted as 4 pixels and 16 bit color mode
+    // will be used; this is for ILI9341 which usually has 320x240 screens
+    // and doesn't support 12 bit color
+    bool double16;
+
+    void beginCS() { if (cs) cs->setDigitalValue(0); }
+    void endCS() { if (cs) cs->setDigitalValue(1); }
+    void setCommand() { dc->setDigitalValue(0); }
+    void setData() { dc->setDigitalValue(1); }
 
     void sendCmd(uint8_t *buf, int len);
     void sendCmdSeq(const uint8_t *buf);
@@ -61,14 +74,15 @@ class ST7735
     static void sendColorsStep(ST7735 *st);
 
 public:
-    ST7735(SPI &spi, Pin &cs, Pin &dc);
-    void init();
+    ST7735(ScreenIO &io, Pin &cs, Pin &dc);
+    virtual int init();
 
     /**
      * Configure screen-specific parameters.
      *
      * @param madctl See MADCTL_* constants above
-     * @param frmctr1 defaults to 0x083b3b, 0x053a3a, 0x053c3c depending on screen size; 0x000605 was found to work well on 160x128 screen; big-endian
+     * @param frmctr1 defaults to 0x083b3b, 0x053a3a, 0x053c3c depending on screen size; 0x000605
+     * was found to work well on 160x128 screen; big-endian
      */
     void configure(uint8_t madctl, uint32_t frmctr1);
     /**
@@ -76,16 +90,22 @@ public:
      */
     void setAddrWindow(int x, int y, int w, int h);
     /**
-     * Send 4 bit indexed color image, little endian, column-major, using specified palette (use NULL
-     * if unchanged).
+     * Send 4 bit indexed color image, little endian, column-major, using specified palette (use
+     * NULL if unchanged).
      */
     int sendIndexedImage(const uint8_t *src, unsigned width, unsigned height, uint32_t *palette);
     /**
-     * Waits for the previous sendIndexedImage() operation to complete (it normally executes in background).
+     * Waits for the previous sendIndexedImage() operation to complete (it normally executes in
+     * background).
      */
     void waitForSendDone();
+
+    /**
+     * Puts the display in (or out of) sleep mode.
+     */
+    virtual int setSleep(bool sleepMode);
 };
 
-}
+} // namespace codal
 
 #endif
